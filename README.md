@@ -249,7 +249,7 @@ Cloudflare Turnstile 人机验证为可选配置，只有当您完成以下配�
     // 用户速率限制
     RATE_LIMIT_VERIFY: 3,              // 用户5分钟内最多可尝试人机验证次数，不可设为0
     RATE_LIMIT_MESSAGE: 45,            // 用户私聊消息发送速率限制，不可设为0
-    RATE_LIMIT_WINDOW: 60,             // 用户私聊消息速率限制窗口，不可设为0
+    RATE_LIMIT_WINDOW: 60,             // 用户私聊消息速率限制窗口（秒），不可设为0
     
     // 人机验证配置
     VERIFY_BUTTON_TEXT: "🤖 点击进行人机验证",     // 人机验证按钮文本

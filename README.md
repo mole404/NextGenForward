@@ -9,7 +9,8 @@
 
 内置设置面板，便于在群组内直接控制机器人各项功能。
 
-本项目基于 [telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot) ，进行了大幅修改，并更新保姆级部署教程。  
+本项目基于 [telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot) ，进行了大幅修改，并更新保姆级部署教程。
+
 在此对原项目作者 [Vaghr](https://github.com/jikssha) 以及我的好兄弟 打钱 & 逆天 表示特别感谢！
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/mole404/NextGenForward?tab=MIT-1-ov-file)

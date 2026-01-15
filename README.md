@@ -1,17 +1,21 @@
 # Next Gen Forward v1.6.0
-![项目主图 小](https://github.com/user-attachments/assets/f23bff07-536e-4114-b268-2b8b601b3b01)
+<img width="535" height="185" alt="项目主图 小" src="https://github.com/user-attachments/assets/a632a655-0b6e-4f31-b6ea-1364028bf540" />
 
-这是一个基于 Cloudflare Workers 部署的 Telegram 双向私聊机器人，通过群组话题方式管理私聊。
+这是一个基于 Cloudflare Workers 部署的 Telegram 双向私聊机器人，通过群组话题方式管理私聊，免费、安全、高效。
 
 支持本地题库 + Cloudflare Turnstile（可选）双重人机验证方式，一键切换。
 
 支持本地规则 + Workers AI（可选）双重垃圾消息拦截，一键开关。
 
+内置设置面板，便于在群组内直接控制机器人各项功能。
+
 本项目基于 [telegram_private_chatbot](https://github.com/jikssha/telegram_private_chatbot) ，进行了部分功能修改，并更新完善配置教程。  
 在此对原项目作者 [Vaghr](https://github.com/jikssha) 以及我的好兄弟 打钱 & 逆天 表示特别感谢！
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/mole404/tg-private-chatbot?tab=MIT-1-ov-file)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/mole404/NextGenForward?tab=MIT-1-ov-file)
 [![Telegram](https://img.shields.io/badge/Telegram-DM-blue?style=social&logo=telegram)](https://t.me/Arona_Chat_Bot) 
+
+<img width="652" height="656" alt="界面示例" src="https://github.com/user-attachments/assets/bd89d509-fdef-4376-b1dd-59eec5911834" />
 
 ---
 
@@ -31,13 +35,15 @@
 
 | 特性 | 描述 |
 | :--- | :--- |
-| **🤖 CF 人机验证** | 采用 Cloudflare Turnstile 人机验证，一键操作，一次通过永久有效，进一步提升安全性，有效防止垃圾消息 |
-| **💬 群组话题管理** | 使用 Telegram 群组话题功能，自动为每位私聊用户创建一个独立的话题，易于管理 |
-| **💻 管理指令系统** | 支持 **封禁 (/ban)**、**解封 (/unban)**、**查看黑名单 (/blacklist)**、**查看用户信息 (/info)** 等操作 |
-| **⛔️ 严格权限管理** | 自动拦截用户发送的 `/` 管理指令，防止用户恶意骚扰，管理指令仅在管理员群组内生效 |
+| **🤖 双重人机验证方案** | 默认采用本地题库验证，**可选** Cloudflare Turnstile 验证，配置后可在群组中一键切换，有效防止骚扰 |
+| **🗑️ 双重垃圾消息拦截** | 默认采用本地规则拦截，**可选** Cloudflare Workers AI 兜底，可在群组中直接编辑本地规则，一键开关拦截 |
+| **💬 高效私聊管理** | 使用 Telegram 群组话题功能，自动为每位私聊用户创建一个独立的话题，易于管理 |
+| **⚙️ 前台设置面板** | 群组内可使用 **/settings** 打开设置面板，便于通过前台快速控制机器人开关、验证、拦截等功能 |
+| **💻 管理指令系统** | 支持 **添加白名单 (/trust)**、**封禁 (/ban)**、**解封 (/unban)**、**查看黑名单 (/blacklist)** 等操作 |
+| **⛔️ 严格权限管理** | 自动拦截用户发送的 `/` 管理指令，防止用户恶意骚扰。管理指令仅在群组内生效，并通过**可选**变量指定固定管理员使用 |
+| **🔑 可选安全增强** | 可选配置 Webhook Secret Token，阻止伪造请求，进一步提升安全性 |
 | **☁️ 零成本部署** | 基于 Cloudflare Workers 部署，无需额外成本，高效稳定 |
 | **📱 多媒体支持** | 完美支持图片、视频、文件等多种消息格式的双向转发 |
-| **⚙️ 前台控制指令** | 支持 **关机 (/off)**、**开机 (/on)**、**重置 (/resetkv)** 等控制命令，便于通过前台快速控制机器人 |
 
 ---
 
@@ -50,15 +56,14 @@
 
 | 管理员指令 | 作用 |
 | :--- | :--- |
-| `/help` | **显示指令说明** |
-| `/ban` | **封禁用户**<br>可添加用户ID，封禁指定用户，例如/ban 123456<br>提示：被封禁用户向管理员发送消息将被屏蔽，但是管理员仍可对该用户单向输出 |
-| `/unban` | **解封用户**<br>可添加用户ID，解封指定用户，例如/unban 123456 |
+| `/help` | **显示使用说明** |
+| `/trust` | **将当前用户添加白名单**<br>加入白名单的用户可以绕过垃圾消息识别，并且永不再需要进行人机验证 |
+| `/ban` | **封禁用户**<br>可加用户ID，例如/ban 或/ban 123456<br>没用的小提示：被封禁用户向管理员发送消息将被屏蔽，但是管理员仍可对该用户单向输出 |
+| `/unban` | **解封用户**<br>可加用户ID，例如/unban 或/unban 123456 |
 | `/blacklist` | **查看黑名单** |
-| `/info` | **查看当前用户信息**<br>可查看用户ID、用户名等信息 |
-| `/off` | **关闭私聊机器人总开关** |
-| `/on` | **打开私聊机器人总开关** |
-| `/clean` | **⚠️危险操作：删除当前用户的所有数据**<br>删除当前用户的所有聊天记录并重置用户人机验证，不可撤销 |
-| `/resetkv` | **⚠️危险操作：重置私聊机器人**<br>将会删除所有用户的聊天记录，重置所有人机验证，不可撤销，不会重置黑名单 |
+| `/info` | **查看当前用户信息**<br>可查看用户ID、用户名、用户状态等信息 |
+| `/settings` | **打开设置面板**<br>可快速控制机器人开关、人机验证、消息拦截，或使用机器人重置功能 |
+| `/clean` | **删除当前话题用户的所有数据**<br>删除用户话题，清空该用户的聊天记录，并重置他的人机验证，但不会改变该用户的封禁状态或白名单状态 |
 
 ---
 

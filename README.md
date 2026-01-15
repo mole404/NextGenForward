@@ -260,7 +260,7 @@ Cloudflare Turnstile 人机验证为可选配置，只有当您完成以下配�
 ## ❓ 常见问题及解决方法
 
 **Q: 为什么机器人没反应？**  
-A: 您的环境变量设置有误 / 未绑定 KV 命名空间 / 未设置 Webhook，未在 Bot Setting 中关闭 Group Privacy，请检查。
+A: 您的环境变量设置有误 / 未绑定 KV 命名空间 / 未设置 Webhook / 未在 Bot Setting 中关闭 Group Privacy，请检查。
 
 **Q: 为什么机器人不创建话题？**  
 A: 请确保您的群组已开启话题（Topics）功能，并且已给予机器人管理员权限，开启了机器人的管理话题权限，`SUPERGROUP_ID`环境变量已正确设置。

@@ -1085,7 +1085,7 @@ const USER_NOTIFICATIONS = {
     first_message_stored: `📝 消息已暂存，完成验证后会自动发送（最多暂存${CONFIG.PENDING_MAX_MESSAGES}条，超出发送最后${CONFIG.PENDING_MAX_MESSAGES}条）`,
     verification_required_no_storage: "🛡 请在5分钟内完成人机验证，才能发送消息",
     verification_button_disabled: "☁️ Cloudflare 验证成功",
-    verification_button_failed: "☁️ Cloudflare 验证失败，请重试",
+    verification_button_failed: "☁️ Cloudflare 验证失败，请稍后再试",
 };
 
 // 线程健康检查缓存，减少频繁探测请求

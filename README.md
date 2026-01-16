@@ -224,7 +224,7 @@ Cloudflare Turnstile 人机验证为可选配置，只有当您完成以下配�
 5. 绑定完成
 
 💡本项目代码中默认使用的 Workers AI 模型为`@cf/meta/llama-3.1-8b-instruct-fast`  
-**如需更换其他模型，请确保使用 Workers AI 可用的 Text Generation 模型，且必须支持 JSON Mode**
+**如需更换其他模型，请确保使用 Workers AI 可用的 Text Generation 模型，且必须支持 JSON Mode**  
 如果您希望更换为其他 AI 模型，或调整识别自信度，可手动编辑项目代码中第 201 - 206 行附近的代码  
 ```
   ai: {

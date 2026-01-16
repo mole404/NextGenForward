@@ -1,4 +1,4 @@
-// Next Gen Forward v1.6.1
+// Next Gen Forward v1.6.2
 // 基于 Cloudflare Workers 部署的 Telegram 双向私聊机器人。
 // 通过群组话题管理私聊，人机验证模块支持 Cloudflare Turnstile & 本地题库 可随时切换。
 // 项目地址 https://github.com/mole404/NextGenForward
@@ -8,7 +8,7 @@
 // Copyright (c) 2026 Frost
 // Released under the MIT License. See LICENSE in the project root.
 
-const BOT_VERSION = "v1.6.1";
+const BOT_VERSION = "v1.6.2";
 
 // --- 配置常量 ---
 const CONFIG = {
@@ -35,7 +35,6 @@ const CONFIG = {
     MEDIA_GROUP_DELAY_MS: 3000,        // 媒体组消息发送延迟（毫秒），用于等待同一媒体组的所有消息到达
     
     // 缓存配置
-    ADMIN_CACHE_TTL_SECONDS: 300,      // 管理员权限缓存时间（秒），减少频繁的权限检查
     THREAD_HEALTH_TTL_MS: 60000,       // 线程健康检查缓存时间（毫秒），减少频繁的话题探测
     
     // API调用配置
@@ -1092,7 +1091,6 @@ const USER_NOTIFICATIONS = {
 // --- 实例内缓存保护：防止 Map 长期增长导致内存膨胀（仅影响缓存命中率，不影响功能）---
 const LOCAL_CACHE_LIMITS = {
     threadHealth: 5000,
-    adminStatus: 2000,
     topicCreateInFlight: 1000
 };
 
@@ -1129,8 +1127,6 @@ function mapSetBounded(map, key, value, maxSize) {
 const threadHealthCache = new Map();
 // 同一实例内的并发保护：避免同一用户短时间内重复创建话题
 const topicCreateInFlight = new Map();
-// 管理员权限缓存（实例内）
-const adminStatusCache = new Map();
 
 // --- 辅助工具函数 ---
 
@@ -1692,8 +1688,16 @@ async function kvList(env, options) {
 }
 
 async function kvGetText(env, key, cacheTtl = undefined) {
-    const opts = normalizeKvGetOptions(cacheTtl !== undefined ? { cacheTtl } : undefined);
-    return kvGetInternal(env, key, opts);
+    try {
+        const opts = normalizeKvGetOptions(cacheTtl !== undefined ? { cacheTtl } : undefined);
+        return await kvGetInternal(env, key, opts);
+    } catch (e) {
+        if (isKvQuotaError(e)) {
+            await tripKvQuotaBreaker();
+            return null;
+        }
+        throw e;
+    }
 }
 
 async function kvGetJSON(env, key, defaultValue = null, options = {}) {
@@ -2311,7 +2315,7 @@ async function probeForumThread(env, expectedThreadId, opts = {}) {
     return second;
 }
 
-async function handleTopicLossAndRecreate(env, { userId, userKey, oldThreadId, pendingMsgId, reason, from = null }) {
+async function handleTopicLossAndRecreate(env, { userId, userKey, oldThreadId, pendingMsgId, reason, from = null }, origin = null) {
     const verified = await kvGetText(env, `verified:${userId}`);
     
     if (verified) {
@@ -2372,8 +2376,8 @@ async function handleTopicLossAndRecreate(env, { userId, userKey, oldThreadId, p
             threadHealthCache.delete(oldThreadId);
         }
         
-        const origin = await getWorkerOrigin(env);
-        if (!origin) {
+        const workerOrigin = origin || await getWorkerOrigin(env);
+        if (!workerOrigin) {
             Logger.error('failed_to_get_origin_for_verification', { userId });
             await tgCall(env, "sendMessage", {
                 chat_id: userId,
@@ -2381,7 +2385,7 @@ async function handleTopicLossAndRecreate(env, { userId, userKey, oldThreadId, p
             });
             return null;
         }
-        await sendHumanVerification(userId, env, pendingMsgId || null, origin, false);
+        await sendHumanVerification(userId, env, pendingMsgId || null, workerOrigin, false);
         return null;
     }
 }
@@ -2401,15 +2405,16 @@ function parseAdminIdAllowlist(env) {
 
 async function isAdminUser(env, userId) {
     const allowlist = parseAdminIdAllowlist(env);
-    if (allowlist && allowlist.has(String(userId))) return true;
+    const uid = String(userId);
 
-    const cacheKey = String(userId);
-    const now = Date.now();
-    const cached = mapGetFresh(adminStatusCache, cacheKey, CONFIG.ADMIN_CACHE_TTL_SECONDS * 1000);
-    if (cached && (now - cached.ts < CONFIG.ADMIN_CACHE_TTL_SECONDS * 1000)) {
-        return cached.isAdmin;
+    // ✅ 当 ADMIN_IDS 配置存在时：它应当作为“管理员指令”的白名单。
+    // 也就是说：不在白名单里 -> 直接拒绝（即便他在群里是 administrator/creator）。
+    // 在白名单里 -> 仍然需要是群管理员（防止误把普通成员写进 ADMIN_IDS 后越权）。
+    if (allowlist && !allowlist.has(uid)) {
+        return false;
     }
 
+    // v1.6.2：去掉管理员状态缓存，每次都直接查询 Telegram getChatMember
     try {
         const res = await tgCall(env, "getChatMember", {
             chat_id: env.SUPERGROUP_ID,
@@ -2417,15 +2422,13 @@ async function isAdminUser(env, userId) {
         });
 
         const status = res.result?.status;
-        const isAdmin = res.ok && (status === "creator" || status === "administrator");
-        
-        mapSetBounded(adminStatusCache, cacheKey, { ts: now, isAdmin }, LOCAL_CACHE_LIMITS.adminStatus);
-        return isAdmin;
+        return res.ok && (status === "creator" || status === "administrator");
     } catch (e) {
         Logger.warn('admin_check_failed', { userId });
         return false;
     }
 }
+
 
 function isUserInAdminWhitelist(env, userId) {
     const allowlist = parseAdminIdAllowlist(env);
@@ -2538,23 +2541,83 @@ async function checkRateLimit(userId, env, action = 'message', limit = 20, windo
     return { allowed: true, remaining: Math.max(0, limit - rec.count) };
 }
 
+
+
+// 宽容解析 WORKER_URL：允许用户填 `example.com` / `https://example.com/` / `//example.com` / `https://example.com/path`
+// 输出：规范化后的 https origin（例如 `https://example.com`）。
+function normalizeWorkerOrigin(raw, { defaultProtocol = 'https:' } = {}) {
+    if (raw == null) {
+        return { origin: null, normalized: null, reason: 'empty' };
+    }
+
+    // 基础清理：转字符串、去首尾空白、去掉可能的引号
+    let s = String(raw).trim().replace(/^['"]|['"]$/g, '');
+    if (!s) {
+        return { origin: null, normalized: null, reason: 'empty' };
+    }
+
+    // 处理协议相对 URL：//example.com => https://example.com
+    if (s.startsWith('//')) {
+        s = `${defaultProtocol}${s}`;
+    }
+
+    // 如果没写 scheme（example.com / example.com/xxx / 1.2.3.4:8787），自动补上 https://
+    const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(s);
+    if (!hasScheme) {
+        // 避免用户写成 /example.com 这种形式
+        s = s.replace(/^\/+/, '');
+        s = `${defaultProtocol}//${s}`;
+    }
+
+    let url;
+    try {
+        url = new URL(s);
+    } catch (e) {
+        return { origin: null, normalized: s, reason: e && e.message ? e.message : 'invalid_url' };
+    }
+
+    if (!url.hostname) {
+        return { origin: null, normalized: url.href, reason: 'missing_hostname' };
+    }
+
+    // 安全/一致性：拒绝 userinfo（https://user:pass@host）
+    if (url.username || url.password) {
+        return { origin: null, normalized: url.href, reason: 'userinfo_not_allowed' };
+    }
+
+    // Telegram Web App URL & Bot API WebAppInfo.url 要求 HTTPS URL，这里强制升到 https。
+    // 参考：Telegram Bot API -> WebAppInfo: “An HTTPS URL of a Web App …”
+    if (url.protocol !== 'https:') {
+        url.protocol = 'https:';
+    }
+
+    // 统一输出：只取 origin（自动丢弃末尾 /、path、query、hash）
+    return { origin: url.origin, normalized: url.href, reason: null };
+}
 async function getWorkerOrigin(env) {
     if (env.WORKER_URL) {
-        try {
-            const url = new URL(env.WORKER_URL);
-            return url.origin;
-        } catch (e) {
-            Logger.warn('invalid_worker_url', { 
-                url: env.WORKER_URL, 
-                error: e.message 
-            });
+        const res = normalizeWorkerOrigin(env.WORKER_URL, { defaultProtocol: 'https:' });
+        if (res && res.origin) {
+            if (String(env.WORKER_URL).trim() !== res.origin) {
+                Logger.info('worker_url_normalized', {
+                    url: env.WORKER_URL,
+                    origin: res.origin
+                });
+            }
+            return res.origin;
         }
+
+        Logger.warn('invalid_worker_url', {
+            url: env.WORKER_URL,
+            normalized: res ? res.normalized : null,
+            reason: res ? res.reason : 'invalid'
+        });
     }
-    
-    Logger.error('worker_url_not_set', { 
-        message: 'WORKER_URL environment variable not set, origin detection may fail' 
+
+    Logger.error('worker_url_not_set', {
+        message: 'WORKER_URL environment variable not set, origin detection may fail'
     });
-    
+
     return null;
 }
 
@@ -2871,13 +2934,8 @@ async function handleVerifyCallback(request, env, ctx) {
 
             // v1.4（方案 4）：失败后立即再发一条新的验证消息（带新按钮），同时做短期防抖避免刷屏
             try {
-                const lockKey = `verify_resend_lock:${userId}`;
-                const locked = await cacheGetText(lockKey);
-                if (!locked) {
-                    await cachePutText(lockKey, "1", 20);
-                    const origin = await getWorkerOrigin(env);
-                    if (origin) await renewTurnstileSessionAndSend(userId, env, origin, sessionData);
-                }
+                const origin = await getWorkerOrigin(env);
+                if (origin) await renewTurnstileSessionAndSend(userId, env, origin, sessionData);
             } catch (_) {}
 
             return new Response(JSON.stringify({ 
@@ -2941,13 +2999,8 @@ async function handleVerifyEvent(request, env, ctx) {
 
     // 失败后立即再发一条新的验证消息（带新按钮），并做短期防抖避免刷屏
     try {
-        const lockKey = `verify_resend_lock:${userId}`;
-        const locked = await cacheGetText(lockKey);
-        if (!locked) {
-            await cachePutText(lockKey, "1", 20);
-            const origin = await getWorkerOrigin(env);
-            if (origin) await renewTurnstileSessionAndSend(userId, env, origin, sessionData);
-        }
+        const origin = await getWorkerOrigin(env);
+        if (origin) await renewTurnstileSessionAndSend(userId, env, origin, sessionData);
     } catch (_) {}
 
     Logger.info('verify_event_handled', { userId, sessionId: sid, reason });
@@ -4435,31 +4488,26 @@ async function renderVerifyPage(request, env, ctx) {
             );
         } catch (_) {}
 
-        // 防刷：同一用户短时间内只重发一次
-        const lockKey = `verify_resend_lock:${userId}`;
-        const locked = await cacheGetText(lockKey);
-        if (!locked) {
-            await cachePutText(lockKey, "1", 20);
+        // v1.6.2：去掉所有 20 秒防抖锁；链接失效时直接重发验证（可能更容易刷屏，请谨慎）
 
-            // 1) 先提示超时
-            const timeoutNotice = "⏰ 您的验证链接已超时，请重新进行验证";
-            const pNotice = tgCall(env, "sendMessage", { chat_id: userId, text: timeoutNotice });
-            if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pNotice);
-            else await pNotice;
+        // 1) 先提示超时
+        const timeoutNotice = "⏰ 您的验证链接已超时，请重新进行验证";
+        const pNotice = tgCall(env, "sendMessage", { chat_id: userId, text: timeoutNotice });
+        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pNotice);
+        else await pNotice;
 
-            // 2) 再发一个新的验证（尽量不影响暂存消息）
-            if (sessionAgeMs > maxAgeMs) {
-                // 若确实已过期，先清理，避免 sendHumanVerification 误判“仍在验证”
-                await checkAndCleanExpiredSession(env, userId);
-                sessionData = null;
-            }
+        // 2) 再发一个新的验证（尽量不影响暂存消息）
+        if (sessionAgeMs > maxAgeMs) {
+            // 若确实已过期，先清理，避免 sendHumanVerification 误判“仍在验证”
+            await checkAndCleanExpiredSession(env, userId);
+            sessionData = null;
+        }
 
-            if (isTurnstileSession) {
-                await renewTurnstileSessionAndSend(userId, env, currentOrigin, sessionData);
-            } else {
-                // 无会话或会话非 Turnstile：按当前全局/会话规则重新发起验证
-                await sendHumanVerification(userId, env, null, currentOrigin, false);
-            }
+        if (isTurnstileSession) {
+            await renewTurnstileSessionAndSend(userId, env, currentOrigin, sessionData);
+        } else {
+            // 无会话或会话非 Turnstile：按当前全局/会话规则重新发起验证
+            await sendHumanVerification(userId, env, null, currentOrigin, false);
         }
 
         return renderMiniAppNoticePage({
@@ -4909,15 +4957,6 @@ async function deleteAllUserTopics(env, threadId, adminId) {
             stats.duration = Date.now() - startTime;
             return stats;
         }
-        
-        // 发送进度报告
-        await tgCall(env, "sendMessage", withMessageThreadId({
-            chat_id: env.SUPERGROUP_ID,
-            message_thread_id: threadId,
-            text: `🗑️ **开始删除用户话题**\n\n找到 ${stats.totalTopics} 个用户话题，正在批量删除...`,
-            parse_mode: "Markdown"
-        }, threadId));
-        
         // 批量删除话题
         const topicIds = Array.from(topicsFromKV);
         const batchSize = CONFIG.TOPIC_DELETE_MAX_PER_BATCH;
@@ -4929,7 +4968,7 @@ async function deleteAllUserTopics(env, threadId, adminId) {
             
             // 报告当前批次进度
             const progressPercent = Math.round((i / topicIds.length) * 100);
-            if (progressPercent % 20 === 0 || i + batchSize >= topicIds.length) {
+            if ((progressPercent % 20 === 0 || i + batchSize >= topicIds.length) && progressPercent !== 0) {
                 await tgCall(env, "sendMessage", withMessageThreadId({
                     chat_id: env.SUPERGROUP_ID,
                     message_thread_id: threadId,
@@ -5290,6 +5329,21 @@ async function handlePrivateMessage(msg, env, ctx, origin = null) {
         return;
     }
 
+    // 私聊消息速率限制：/start 不限流，避免用户无法触发验证流程
+    if (!isStartCommand) {
+        const limit = await checkRateLimit(
+            userId,
+            env,
+            'message',
+            CONFIG.RATE_LIMIT_MESSAGE,
+            CONFIG.RATE_LIMIT_WINDOW
+        );
+        if (!limit.allowed) {
+            await tgCall(env, "sendMessage", { chat_id: userId, text: ERROR_MESSAGES.rate_limit });
+            return;
+        }
+    }
+
     const isBanned = await kvGetText(env, `banned:${userId}`, CONFIG.KV_CRITICAL_CACHE_TTL);
     if (isBanned) return;
 
@@ -5312,7 +5366,7 @@ async function handlePrivateMessage(msg, env, ctx, origin = null) {
             return;
         }
 
-        await forwardToTopic(msg, userId, key, env, ctx);
+        await forwardToTopic(msg, userId, key, env, ctx, origin);
         return;
     }
 
@@ -5376,10 +5430,10 @@ async function handlePrivateMessage(msg, env, ctx, origin = null) {
         return;
     }
 
-    await forwardToTopic(msg, userId, key, env, ctx);
+    await forwardToTopic(msg, userId, key, env, ctx, origin);
 }
 
-async function forwardToTopic(msg, userId, key, env, ctx) {
+async function forwardToTopic(msg, userId, key, env, ctx, origin = null) {
     const command = extractCommand(msg.text);
     const isStartCommand = command === "start";
     
@@ -5571,7 +5625,7 @@ if (shouldSendNotice) {
                             pendingMsgId: msg.message_id,
                             reason: `health_check:${probe.status}`,
                             from: msg.from
-                        });
+                        }, origin);
                         
                         if (newRec) {
                             rec = newRec;
@@ -5593,7 +5647,7 @@ if (shouldSendNotice) {
                             pendingMsgId: msg.message_id,
                             reason: `health_check:${probe.status}`,
                             from: msg.from
-                        });
+                        }, origin);
                         return;
                     }
                 } else if (probe.status === "probe_invalid") {
@@ -5669,7 +5723,7 @@ if (shouldSendNotice) {
                 pendingMsgId: msg.message_id,
                 reason: "forward_redirected_to_general",
                 from: msg.from
-            });
+            }, origin);
             
             if (newRec) {
                 await tgCall(env, "forwardMessage", {
@@ -5686,7 +5740,7 @@ if (shouldSendNotice) {
                 oldThreadId: rec.thread_id,
                 pendingMsgId: msg.message_id,
                 reason: "forward_redirected_to_general"
-            });
+            }, origin);
         }
         return;
     }
@@ -5726,7 +5780,7 @@ if (shouldSendNotice) {
                     pendingMsgId: msg.message_id,
                     reason: `forward_missing_thread_id:${probe.status}`,
                     from: msg.from
-                });
+                }, origin);
                 
                 if (newRec) {
                     await tgCall(env, "forwardMessage", {
@@ -5743,7 +5797,7 @@ if (shouldSendNotice) {
                     oldThreadId: rec.thread_id,
                     pendingMsgId: msg.message_id,
                     reason: `forward_missing_thread_id:${probe.status}`
-                });
+                }, origin);
             }
             return;
         }
@@ -5772,7 +5826,7 @@ if (shouldSendNotice) {
                     pendingMsgId: msg.message_id,
                     reason: "forward_failed_topic_missing",
                     from: msg.from
-                });
+                }, origin);
                 
                 if (newRec) {
                     await tgCall(env, "forwardMessage", {
@@ -5789,7 +5843,7 @@ if (shouldSendNotice) {
                     oldThreadId: rec.thread_id,
                     pendingMsgId: msg.message_id,
                     reason: "forward_failed_topic_missing"
-                });
+                }, origin);
             }
             return;
         }
@@ -5960,7 +6014,6 @@ async function silentCleanUserDataAndTopic(env, userId, threadId, adminId) {
         // 清理内存缓存
         if (threadId) threadHealthCache.delete(threadId);
         topicCreateInFlight.delete(String(userId));
-        adminStatusCache.delete(String(userId));
         
         // 步骤2: 删除话题页面
         try {
@@ -7648,11 +7701,9 @@ async function resetKVStorage(env, threadId, adminId) {
         try {
             threadHealthCache.clear();
             topicCreateInFlight.clear();
-            adminStatusCache.clear();
             Logger.debug('resetkv_cache_cleared', {
                 threadHealthCache: threadHealthCache.size,
                 topicCreateInFlight: topicCreateInFlight.size,
-                adminStatusCache: adminStatusCache.size
             });
         } catch (cacheError) {
             Logger.error('resetkv_cache_clear_failed', cacheError);

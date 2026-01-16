@@ -1,4 +1,4 @@
-# Next Gen Forward v1.6.1
+# Next Gen Forward v1.6.2
 <img width="535" height="185" alt="项目主图 小" src="https://github.com/user-attachments/assets/a632a655-0b6e-4f31-b6ea-1364028bf540" />
 
 这是一个基于 Cloudflare Workers 部署的 Telegram 双向私聊机器人，通过群组话题管理私聊，免费、安全、高效。
@@ -17,6 +17,19 @@
 [![Telegram](https://img.shields.io/badge/Telegram-DM-blue?style=social&logo=telegram)](https://t.me/Arona_Chat_Bot) 
 
 <details>
+
+<summary>💡 <b>v1.6.2 版本更新（2026-01-16）</b></summary>  
+   
+### 更新内容
+   
+- **添加`WORKER_URL`域名自动规范化功能**：已支持对`WORKER_URL`变量进行域名自动规范化，修复了极少数情况下因域名格式填写不规范导致的人机验证报错。  
+- **修复`ADMIN_IDS`变量设置后未生效问题**：现在设置`ADMIN_IDS`变量已经可以正常控制群组内管理员的指令使用权。
+- **修复用户私聊消息限流失效问题**：现在可依据配置常量参数正常对消息限流。
+
+</details>
+
+<details>
+
 <summary>💡 <b>v1.6.1 版本更新（2026-01-16）</b></summary>  
    
 ### 更新内容
@@ -177,7 +190,7 @@
 | `CF_TURNSTILE_SITE_KEY` | 您的 site_key（详见可选配置 1） | **若需使用 Cloudflare 人机验证<br>则此变量必须设置** |
 | `CF_TURNSTILE_SECRET_KEY` | 您的 secret_key（详见可选配置 1） | **加密<br>若需使用 Cloudflare 人机验证<br>则此变量必须设置** |
 | `WEBHOOK_SECRET` | 自定义随机组合 | **加密**<br>支持`A-Z` `a-z` `0-9` `_` `-`字符组合<br>使用其它字符会出错<br>设置此变量可提高 Webhook 安全性<br>**配置此变量后激活 Webhook 必须添加secret_token字段** |
-| `ADMIN_IDS` | 群组管理员TG用户ID 和 您机器人的TG用户ID，例如：123456789,987654321 | 可使用 [@userinfobot](https://t.me/userinfobot) 查看<br>多个ID之间使用英文逗号连接<br>**当您群组内存在多位管理员时，您可通过此变量来控制管理员指令的使用权** |
+| `ADMIN_IDS` | 群组管理员用户ID<br>例如：123456789,987654321 | 可使用 [@userinfobot](https://t.me/userinfobot) 查看<br>多个ID之间使用英文逗号连接<br>**当您群组内存在多位管理员时，您可通过添加此变量来控制管理员指令的使用权** |
 | `API_BASE` | `https://api.telegram.org` | 缺省默认就是这个，可忽略 |
 
 
@@ -211,8 +224,8 @@ Cloudflare Turnstile 人机验证为可选配置，只有当您完成以下配�
 5. 绑定完成
 
 💡本项目代码中默认使用的 Workers AI 模型为`@cf/meta/llama-3.1-8b-instruct-fast`  
-如果您希望更换为其他 AI 模型，或调整识别自信度，可手动编辑项目代码中第 202 - 207 行  
 **如需更换其他模型，请确保使用 Workers AI 可用的 Text Generation 模型，且必须支持 JSON Mode**
+如果您希望更换为其他 AI 模型，或调整识别自信度，可手动编辑项目代码中第 201 - 206 行附近的代码  
 ```
   ai: {
     enabled: true,

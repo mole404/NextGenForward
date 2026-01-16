@@ -17,8 +17,10 @@
 [![Telegram](https://img.shields.io/badge/Telegram-DM-blue?style=social&logo=telegram)](https://t.me/Arona_Chat_Bot) 
 
 <details>
-<summary>📢 <b>v1.6.1 版本更新（2026-01-16）</b></summary>  
-
+<summary>💡 <b>v1.6.1 版本更新（2026-01-16）</b></summary>  
+   
+### 更新内容
+   
 - **垃圾消息规则优化**：优化垃圾消息识别规则，当前已支持`清空默认`本地规则，来实现纯 AI 识别。
 - **默认 AI 自信度调整**：将默认 AI 识别自信度调整为`threshold: 0.65`，识别更激进。
 

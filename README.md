@@ -299,7 +299,7 @@ A: 这是由于 Cloudflare 边缘节点最终一致性所导致的延迟问题�
 A: /ban 他。
 
 **Q: 本地垃圾消息拦截规则中的 max_links=n 使用方法不明确？**  
-A: `max_links=n`规则表示“只要包含n条链接就会实施拦截”，例如`max_links=1`时，只要消息中有1条链接就会被拦截。另外，`max_links=0`表示无限制。
+A: `max_links=n`表示“只要链接数量达到n条，就会实施拦截”。例如`max_links=1`时，只要消息中存在1条及以上链接，就会被拦截。另外，`max_links=0`表示无限制。
 
 **Q: 为什么用户打开人机验证页面报错 Worker Origin Error？**  
 A: 请确保您的`WORKER_URL` `CF_TURNSTILE_SITE_KEY`和`CF_TURNSTILE_SECRET_KEY`**所有三个**环境变量均已在 CF 控制台设置，一般这个报错是您未设置`WORKER_URL`所导致的。

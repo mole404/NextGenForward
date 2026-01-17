@@ -4981,9 +4981,7 @@ async function renderVerifyPage(request, env, ctx) {
     .status{ display:none; margin-top: 12px; padding: 12px 12px; border-radius: 16px; border: 1px solid var(--stroke); font-size: 13px; line-height: 1.4; }
     .status.ok{ border-color: rgba(16,185,129,.35); background: rgba(16,185,129,.08); }
     .status.err{ border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.08); }
-
-    .foot{ display:flex; justify-content:center; gap:10px; margin-top: 14px; color: var(--muted); font-size: 12px; padding-bottom: 4px; }
-    .pill{ border: 1px solid var(--stroke); background: rgba(255,255,255,.06); padding: 6px 10px; border-radius: 999px; white-space:nowrap; }
+    .foot{ margin-top: 14px; color: var(--muted); font-size: 12px; padding-bottom: 4px; text-align:center; }
 
     @media (prefers-reduced-motion: reduce){ .fx::before, .fx::after{ animation:none !important; } }
       .grid{ opacity:.10; }
@@ -5025,7 +5023,7 @@ async function renderVerifyPage(request, env, ctx) {
         </div>
 
         <div class="foot">
-          <span class="pill">Powered by Cloudflare</span>
+          Powered by Cloudflare
         </div>
       </div>
     </div>
